@@ -2,23 +2,54 @@
 
 ## Issue 一覧と状態
 
-<!-- Supervisor が issue 分割時にこの表を更新する -->
-
 | Issue | タイトル | 依存 | 並列グループ | 状態 |
 |-------|---------|------|------------|------|
-| （未分割：Supervisor が SPEC.md を読んで issue を作成する） | | | | |
+| issue01 | 環境構築（Vite + React + TS + Tailwind + shadcn/ui + Tauri） | なし | Group 1 | 未着手 |
+| issue02 | 型定義・モックデータ（types.ts / mockData.ts） | issue01 | Group 2 | 未着手 |
+| issue03 | DirectoryTree コンポーネント | issue02 | Group 3 | 未着手 |
+| issue04 | FileDetailView コンポーネント（TextDiffView + BinaryFileView） | issue02 | Group 3 | 未着手 |
+| issue05 | App 統合（ヘッダー・モードタブ・GitRefSelector・検索・フィルタ） | issue03, issue04 | Group 4 | 未着手 |
+| issue06 | Tauri IPC 連携：フォルダ比較 | issue05 | Group 5 | 未着手 |
+| issue07 | Tauri IPC 連携：git比較 | issue06 | Group 6 | 未着手 |
+| issue08 | アイコン適用・.app パッケージ化・動作確認 | issue07 | Group 7 | 未着手 |
 
 ---
 
 ## 並列実行グループ
 
-<!-- Supervisor が issue 分割時に更新する。`bash scripts/parallel-check.sh` の結果と整合させる -->
+```
+Group 1: issue01  （環境構築）
+    ↓
+Group 2: issue02  （型定義・モックデータ）
+    ↓
+Group 3: issue03 ┐
+         issue04 ┘ 並列実行可（Editable Files が重複しない）
+    ↓
+Group 4: issue05  （App 統合）
+    ↓
+Group 5: issue06  （IPC：フォルダ比較）
+    ↓
+Group 6: issue07  （IPC：git比較）
+    ↓
+Group 7: issue08  （アイコン・パッケージ化）
+```
+
+※ issue06 と issue07 は両方 `App.tsx` と `src-tauri/src/` を編集するため並列化しない（競合回避ルール）。
 
 ---
 
 ## 依存関係
 
-<!-- Supervisor が issue 分割時に更新する -->
+```
+issue01
+  └── issue02
+        ├── issue03 ──┐
+        └── issue04 ──┤
+                      └── issue05
+                            └── issue06
+                                  └── issue07
+                                        └── issue08
+```
 
 ---
 
@@ -39,11 +70,16 @@
 
 `feature/issueXX-short-name` 形式とする。
 
-<!-- Supervisor が issue 分割時に一覧を追記する -->
-
 | Issue | ブランチ名 |
 |-------|-----------|
-| | |
+| issue01 | feature/issue01-env-setup |
+| issue02 | feature/issue02-types-mock |
+| issue03 | feature/issue03-directory-tree |
+| issue04 | feature/issue04-file-detail-view |
+| issue05 | feature/issue05-app-integration |
+| issue06 | feature/issue06-ipc-directory |
+| issue07 | feature/issue07-ipc-git |
+| issue08 | feature/issue08-packaging |
 
 ---
 

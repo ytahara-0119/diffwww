@@ -102,14 +102,14 @@ for id in "${!ISSUE_STATUS[@]}"; do
 done
 
 # READY リスト内で Editable Files が重複しないグループを貪欲法で作成
-declare -a GROUPS   # "issue01 issue03" 形式の文字列配列
+declare -a PGROUPS   # "issue01 issue03" 形式の文字列配列
 declare -A ASSIGNED # issue_id → グループインデックス
 
 for id in "${READY[@]}"; do
   placed=false
-  for i in "${!GROUPS[@]}"; do
+  for i in "${!PGROUPS[@]}"; do
     conflict=false
-    for existing_id in ${GROUPS[$i]}; do
+    for existing_id in ${PGROUPS[$i]}; do
       # Files の重複チェック
       for f in ${ISSUE_FILES[$id]}; do
         if echo "${ISSUE_FILES[$existing_id]}" | grep -qF "$f"; then
@@ -119,15 +119,15 @@ for id in "${READY[@]}"; do
       done
     done
     if ! $conflict; then
-      GROUPS[$i]="${GROUPS[$i]} $id"
+      PGROUPS[$i]="${PGROUPS[$i]} $id"
       ASSIGNED[$id]=$i
       placed=true
       break
     fi
   done
   if ! $placed; then
-    GROUPS+=("$id")
-    ASSIGNED[$id]=$((${#GROUPS[@]} - 1))
+    PGROUPS+=("$id")
+    ASSIGNED[$id]=$((${#PGROUPS[@]} - 1))
   fi
 done
 
@@ -146,10 +146,10 @@ if $JSON_MODE; then
   done
   echo "  ],"
   echo "  \"groups\": ["
-  for i in "${!GROUPS[@]}"; do
+  for i in "${!PGROUPS[@]}"; do
     sep=","
-    [ $((i + 1)) -eq ${#GROUPS[@]} ] && sep=""
-    ids=$(echo "${GROUPS[$i]}" | tr ' ' '\n' | grep -v '^$' | sed 's/.*/"&"/' | paste -sd ',' -)
+    [ $((i + 1)) -eq ${#PGROUPS[@]} ] && sep=""
+    ids=$(echo "${PGROUPS[$i]}" | tr ' ' '\n' | grep -v '^$' | sed 's/.*/"&"/' | paste -sd ',' -)
     echo "    [$ids]$sep"
   done
   echo "  ]"
@@ -167,10 +167,10 @@ else
     echo "  （pending issue がないか、依存が未完了です）"
     echo ""
   else
-    for i in "${!GROUPS[@]}"; do
+    for i in "${!PGROUPS[@]}"; do
       echo ""
       printf "  【グループ %d】同時実行可\n" $((i + 1))
-      for id in ${GROUPS[$i]}; do
+      for id in ${PGROUPS[$i]}; do
         [ -z "$id" ] && continue
         printf "    %-10s  %s\n" "$id" "${ISSUE_TITLE[$id]}"
         printf "              branch: %s\n" "${ISSUE_BRANCH[$id]}"
@@ -180,7 +180,7 @@ else
     done
     echo ""
     echo "--------------------------------------------"
-    printf "  実行可能: %d issue  /  %d グループ\n" "${#READY[@]}" "${#GROUPS[@]}"
+    printf "  実行可能: %d issue  /  %d グループ\n" "${#READY[@]}" "${#PGROUPS[@]}"
   fi
 
   echo "============================================"
