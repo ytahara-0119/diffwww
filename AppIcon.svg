@@ -1,0 +1,35 @@
+<svg viewBox="0 0 1024 1024" width="1024" height="1024" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="diffwww app icon">
+  <defs>
+    <linearGradient id="iconGround" x1="0" x2="0" y1="92" y2="932" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1a1d23"/>
+      <stop offset="1" stop-color="#23272e"/>
+    </linearGradient>
+    <filter id="deltaGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.176 0 0 0 0 0.831 0 0 0 0 0.749 0 0 0 0.55 0"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="squircleClip">
+      <path d="M512 92c151 0 249 0 314 65s65 163 65 314v82c0 151 0 249-65 314s-163 65-314 65h0c-151 0-249 0-314-65s-65-163-65-314v-82c0-151 0-249 65-314s163-65 314-65Z"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#squircleClip)">
+    <path d="M512 92c151 0 249 0 314 65s65 163 65 314v82c0 151 0 249-65 314s-163 65-314 65h0c-151 0-249 0-314-65s-65-163-65-314v-82c0-151 0-249 65-314s163-65 314-65Z" fill="url(#iconGround)"/>
+    <g opacity="0.78">
+      <path d="M218 346h236" stroke="#f43f5e" stroke-width="28" stroke-linecap="round" opacity="0.22"/>
+      <path d="M218 430h188" stroke="#f43f5e" stroke-width="28" stroke-linecap="round" opacity="0.16"/>
+      <path d="M218 598h224" stroke="#f43f5e" stroke-width="28" stroke-linecap="round" opacity="0.18"/>
+      <path d="M570 346h236" stroke="#10b981" stroke-width="28" stroke-linecap="round" opacity="0.18"/>
+      <path d="M570 514h198" stroke="#10b981" stroke-width="28" stroke-linecap="round" opacity="0.24"/>
+      <path d="M570 598h244" stroke="#10b981" stroke-width="28" stroke-linecap="round" opacity="0.16"/>
+      <path d="M512 250v524" stroke="#333842" stroke-width="6" stroke-linecap="round" opacity="0.9"/>
+    </g>
+    <path d="M512 286 708 710H316L512 286Z" fill="#1a1d23" fill-opacity="0.54" stroke="#2dd4bf" stroke-width="68" stroke-linejoin="round" filter="url(#deltaGlow)"/>
+    <path d="M436 622h152" stroke="#2dd4bf" stroke-width="52" stroke-linecap="round" opacity="0.96" filter="url(#deltaGlow)"/>
+    <path d="M512 93c151 0 248 0 313 64s65 163 65 314v82c0 151 0 248-65 313s-162 65-313 65-248 0-313-65-65-162-65-313v-82c0-151 0-249 65-314s162-64 313-64Z" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2"/>
+    <path d="M512 93c151 0 248 0 313 64s65 163 65 314v82c0 151 0 248-65 313s-162 65-313 65-248 0-313-65-65-162-65-313v-82c0-151 0-249 65-314s162-64 313-64Z" fill="none" stroke="#0b0d11" stroke-opacity="0.55" stroke-width="6"/>
+  </g>
+</svg>

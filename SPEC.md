@@ -90,10 +90,11 @@ export interface FileNode {
 }
 
 export interface DiffLine {
-  type: 'added' | 'deleted' | 'unchanged';
-  leftLineNumber?: number;
-  rightLineNumber?: number;
-  content: string;
+  type: 'added' | 'deleted' | 'modified' | 'unchanged';
+  leftLineNumber?: number;   // deleted / modified / unchanged で設定
+  rightLineNumber?: number;  // added / modified / unchanged で設定
+  leftContent?: string;      // added のとき undefined（プレースホルダ行）
+  rightContent?: string;     // deleted のとき undefined（プレースホルダ行）
 }
 
 export interface GitBranch {
@@ -170,9 +171,14 @@ git比較では、差分のないファイルはツリーに含めない（`iden
 
 ### テキストファイル（TextDiffView）
 
-- 左右2カラムのSplit diff表示
+- 左右2カラムのSplit diff表示（行の種類は WinMerge 流の4分類）
 - 行番号表示
-- 追加行：緑背景、削除行：赤背景、変更なし：透明
+- 追加行（`added`）：右カラムのみ緑背景、左カラムは対応位置にプレースホルダ行
+- 削除行（`deleted`）：左カラムのみ赤背景、右カラムは対応位置にプレースホルダ行
+- 変更行（`modified`）：左右両方に存在し内容が異なる行。左右同一行位置に黄（amber）背景で表示
+  - Myers 差分（`similar` クレート）の Replace 操作を `modified` にマップする
+- 変更なし（`unchanged`）：透明
+- プレースホルダ行：行番号なし・一段濃い背景＋斜線パターン。左右の行位置が常に揃うことを保証する
 
 #### 長い行の表示（重要：Peekdiff での教訓）
 
@@ -275,6 +281,26 @@ Peekdiff（ライト基調・パープル〜ピンクのグラデーション）
 - ステータス色は全モード共通（追加=green, 削除=red, 変更=yellow, 同一=gray。ダーク背景向けに彩度・透過を調整）
 - アニメーション：framer-motion で最小限（フェードインのみ）
 - Figma Make で作成したデザインを視覚的リファレンス（正）とし、細部の色・余白はそれに従う
+  - デザインファイル：https://www.figma.com/make/gRePDLuZExkMopPxTJQ5Gr/diffwww-UI-Design
+  - Screen 01: フォルダ比較 / Screen 02: git比較 / Screen 03: 空状態 / Screen 04: バイナリ詳細
+
+### 主要カラートークン（Figma Make 確定値）
+
+| トークン | 値 | 用途 |
+|---------|-----|------|
+| `--background` | `#1a1d23` | ウィンドウ背景・diff エリア |
+| `--card` / パネル | `#23272e` / `#20242b` | ヘッダー・ツリーペイン・カード |
+| `--muted` / 入力欄 | `#171a20` | 入力欄・セレクト背景 |
+| ガター | `#15181e` | 行番号ガター・スクロールバートラック |
+| `--border` | `#333842` | 境界線全般 |
+| `--primary` | `#2dd4bf` | 選択タブ・比較ボタン・選択行・フォーカスリング |
+| `--foreground` | `#d7dde7` | 基本テキスト |
+| 追加 | emerald 系（`/10`前後の低透過） | バッジ・ツリー・diff 行 |
+| 削除 | rose 系（同上） | バッジ・ツリー・diff 行 |
+| 変更 | amber 系（同上） | バッジ・ツリー・diff 行・ハッシュ差異ハイライト |
+| 同一 | zinc 系 | バッジ・ツリー |
+
+フォント：UI = Inter / コード・パス・ハッシュ・行番号 = JetBrains Mono
 
 ## 5.3 コンポーネント構成
 
