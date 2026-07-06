@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * diffwww カラートークン（SPEC.md §5.2 Figma Make 確定値）
+ * ダークテーマがデフォルト。:root / .dark とも同一のダーク値を定義する。
+ */
+:root {
+  --background: #1a1d23;
+  --foreground: #d7dde7;
+  --card: #23272e;
+  --card-foreground: #d7dde7;
+  --popover: #23272e;
+  --popover-foreground: #d7dde7;
+  --panel: #20242b;
+  --primary: #2dd4bf;
+  --primary-foreground: #1a1d23;
+  --secondary: #20242b;
+  --secondary-foreground: #d7dde7;
+  --muted: #171a20;
+  --muted-foreground: #8b93a1;
+  --accent: #20242b;
+  --accent-foreground: #d7dde7;
+  --destructive: #f43f5e;
+  --destructive-foreground: #d7dde7;
+  --border: #333842;
+  --input: #171a20;
+  --ring: #2dd4bf;
+  --gutter: #15181e;
+
+  /* ステータス色（追加=emerald / 削除=rose / 変更=amber / 同一=zinc） */
+  --status-added: #10b981;
+  --status-deleted: #f43f5e;
+  --status-modified: #f59e0b;
+  --status-identical: #71717a;
+
+  /* 角丸は小さめ（4〜6px） */
+  --radius: 6px;
+
+  /* フォント（UI: Inter系 / コード: JetBrains Mono系、フォールバック付き） */
+  --font-sans: "Inter", "Inter Variable", -apple-system, BlinkMacSystemFont,
+    "Helvetica Neue", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Arial,
+    sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+}
+
+.dark {
+  --background: #1a1d23;
+  --foreground: #d7dde7;
+  --card: #23272e;
+  --card-foreground: #d7dde7;
+  --popover: #23272e;
+  --popover-foreground: #d7dde7;
+  --panel: #20242b;
+  --primary: #2dd4bf;
+  --primary-foreground: #1a1d23;
+  --secondary: #20242b;
+  --secondary-foreground: #d7dde7;
+  --muted: #171a20;
+  --muted-foreground: #8b93a1;
+  --accent: #20242b;
+  --accent-foreground: #d7dde7;
+  --destructive: #f43f5e;
+  --destructive-foreground: #d7dde7;
+  --border: #333842;
+  --input: #171a20;
+  --ring: #2dd4bf;
+  --gutter: #15181e;
+
+  --status-added: #10b981;
+  --status-deleted: #f43f5e;
+  --status-modified: #f59e0b;
+  --status-identical: #71717a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-panel: var(--panel);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-gutter: var(--gutter);
+  --color-status-added: var(--status-added);
+  --color-status-deleted: var(--status-deleted);
+  --color-status-modified: var(--status-modified);
+  --color-status-identical: var(--status-identical);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
