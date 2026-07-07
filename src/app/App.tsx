@@ -4,6 +4,8 @@ import type {
   CompareMode,
   DiffLine,
   FileNode,
+  GitBranch,
+  GitCommit,
   GitRefSelection,
 } from './types'
 import {
@@ -29,18 +31,27 @@ import {
   readFileContent,
   toErrorMessage,
 } from './lib/ipc'
+import {
+  compareGitRefs,
+  isGitRepository,
+  listBranches,
+  listCommits,
+  readFileAtRef,
+} from './lib/gitIpc'
 
 // ---------------------------------------------------------------------------
 // App（SPEC.md §4.1〜4.3, §4.7〜4.10, §5.1）
 // モード state・比較実行・検索/フィルタ・統計集計・
 // DirectoryTree + FileDetailView 連携をまとめる統合コンポーネント。
-// フォルダ比較は Tauri IPC 経由の実データ（issue06）。git比較はモックのまま
-// （issue07 で差し替え）。Tauri 外（pnpm dev のブラウザ）では従来どおり
-// 全モードがモック動作する。
+// フォルダ比較（issue06）・git比較（issue07）とも Tauri IPC 経由の実データ。
+// Tauri 外（pnpm dev のブラウザ）では従来どおり全モードがモック動作する。
 // ---------------------------------------------------------------------------
 
-/** 擬似ローディング時間（ms）。git比較（issue07 まで）とブラウザ動作時に使用 */
+/** 擬似ローディング時間（ms）。ブラウザ動作時のモック比較に使用 */
 const MOCK_COMPARE_DURATION = 900
+
+/** リポジトリパス入力の検証を遅らせるデバウンス時間（ms） */
+const REPO_VALIDATE_DEBOUNCE = 300
 
 /** フォルダ選択ダイアログのモック値（Tauri 外のブラウザ動作時のフォールバック） */
 const MOCK_PICKED_PATHS = {
@@ -160,6 +171,11 @@ export default function App() {
   const [refA, setRefA] = useState<GitRefSelection>(EMPTY_REF)
   const [refB, setRefB] = useState<GitRefSelection>(EMPTY_REF)
 
+  // git比較モードのブランチ・コミット一覧（Tauri 内では IPC で取得。
+  // ブラウザ動作時は Header へ渡す際にモックへフォールバックする）
+  const [branches, setBranches] = useState<GitBranch[]>([])
+  const [commits, setCommits] = useState<GitCommit[]>([])
+
   // 比較実行・結果
   const [isComparing, setIsComparing] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -172,6 +188,15 @@ export default function App() {
   const [comparedPaths, setComparedPaths] = useState<{
     left: string
     right: string
+  } | null>(null)
+
+  // IPC で git比較を実行したときのリポジトリと ref（モック結果のときは null）。
+  // 選択ファイルの実内容読み込み（read_file_at_ref）に使う。
+  // oldRef = 左（A）/ newRef = 右（B）（SPEC.md §4.3）
+  const [comparedGit, setComparedGit] = useState<{
+    repo: string
+    oldRef: string
+    newRef: string
   } | null>(null)
 
   // IPC で遅延取得した選択ファイルの詳細（テキスト diff / バイナリメタデータ）
@@ -214,6 +239,9 @@ export default function App() {
     setSearchQuery('')
     setStatusFilter('all')
     setComparedPaths(null)
+    setComparedGit(null)
+    setBranches([])
+    setCommits([])
     setIpcDetail(null)
   }
 
@@ -279,6 +307,94 @@ export default function App() {
     }
   }, [])
 
+  /**
+   * リポジトリパス確定時の検証（SPEC.md §4.3）：is_git_repository で検証し、
+   * リポジトリならブランチ一覧をセレクトに反映する。非リポジトリはエラー表示。
+   * 手入力に追従するため短いデバウンスを挟む（ダイアログ・D&D は1回で確定）。
+   */
+  useEffect(() => {
+    if (mode !== 'git' || !isTauri()) return
+    setBranches([])
+    setCommits([])
+    setRefA(EMPTY_REF)
+    setRefB(EMPTY_REF)
+    const repo = repoPath.trim()
+    if (repo === '') {
+      setError(null)
+      return
+    }
+    let cancelled = false
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const ok = await isGitRepository(repo)
+          if (cancelled) return
+          if (!ok) {
+            setError(`git リポジトリではありません: ${repo}`)
+            return
+          }
+          setError(null)
+          const list = await listBranches(repo)
+          if (cancelled) return
+          setBranches(list)
+          if (list.length === 0) {
+            setError(
+              'ブランチが見つかりません（コミットのない空リポジトリの可能性があります）',
+            )
+          }
+        } catch (err) {
+          if (!cancelled) setError(toErrorMessage(err))
+        }
+      })()
+    }, REPO_VALIDATE_DEBOUNCE)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeoutId)
+    }
+  }, [mode, repoPath])
+
+  /**
+   * 選択ブランチのコミット一覧（最大50件）を取得する。
+   * Header のコミットセレクトは A/B で一覧を共有するため、
+   * A・B 両方の選択ブランチのコミットをハッシュで重複排除して結合する。
+   */
+  useEffect(() => {
+    if (mode !== 'git' || !isTauri()) return
+    const repo = repoPath.trim()
+    const branchNames = [
+      ...new Set([refA.branch, refB.branch].filter((b) => b !== '')),
+    ]
+    if (repo === '' || branchNames.length === 0) {
+      setCommits([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const lists = await Promise.all(
+          branchNames.map((branch) => listCommits(repo, branch)),
+        )
+        if (cancelled) return
+        const seen = new Set<string>()
+        const merged: GitCommit[] = []
+        for (const list of lists) {
+          for (const commit of list) {
+            if (!seen.has(commit.hash)) {
+              seen.add(commit.hash)
+              merged.push(commit)
+            }
+          }
+        }
+        setCommits(merged)
+      } catch (err) {
+        if (!cancelled) setError(toErrorMessage(err))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [mode, repoPath, refA.branch, refB.branch])
+
   const canCompare =
     mode === 'directory'
       ? leftPath.trim() !== '' && rightPath.trim() !== ''
@@ -304,6 +420,42 @@ export default function App() {
       setTree(result)
       setSelectedFile(null)
       setComparedPaths({ left, right })
+      setComparedGit(null)
+      setIpcDetail(null)
+      setProgress(100)
+    } catch (err) {
+      setError(toErrorMessage(err))
+    } finally {
+      clearTimers()
+      setIsComparing(false)
+    }
+  }
+
+  /** GitRefSelection を git の ref 文字列へ（コミット未選択ならブランチ HEAD） */
+  const refToSpec = (ref: GitRefSelection) => ref.commit ?? ref.branch
+
+  /** git比較の実行（Tauri IPC、SPEC.md §4.3・§6.1）。左=old / 右=new */
+  const runGitCompare = async () => {
+    const repo = repoPath.trim()
+    const oldRef = refToSpec(refA)
+    const newRef = refToSpec(refB)
+    clearTimers()
+    setIsComparing(true)
+    setProgress(0)
+    setError(null)
+
+    // バックエンドは進捗イベントを持たないため、完了まで 90% を上限に進める
+    const intervalId = window.setInterval(() => {
+      setProgress((prev) => Math.min(prev + 6, 90))
+    }, 120)
+    timersRef.current.push(intervalId)
+
+    try {
+      const result = await compareGitRefs(repo, oldRef, newRef)
+      setTree(result)
+      setSelectedFile(null)
+      setComparedPaths(null)
+      setComparedGit({ repo, oldRef, newRef })
       setIpcDetail(null)
       setProgress(100)
     } catch (err) {
@@ -316,13 +468,13 @@ export default function App() {
 
   /**
    * 比較実行（SPEC.md §4.9）。
-   * フォルダ比較（Tauri 内）は IPC で実データを取得する。
-   * git比較（issue07 まで）とブラウザ動作時は擬似ローディング → モック結果。
+   * Tauri 内ではフォルダ比較・git比較とも IPC で実データを取得する。
+   * ブラウザ動作時は擬似ローディング → モック結果。
    */
   const handleCompare = () => {
     if (!canCompare || isComparing) return
-    if (mode === 'directory' && isTauri()) {
-      void runDirectoryCompare()
+    if (isTauri()) {
+      void (mode === 'directory' ? runDirectoryCompare() : runGitCompare())
       return
     }
     const compareMode = mode
@@ -340,6 +492,7 @@ export default function App() {
       setTree(compareMode === 'directory' ? mockDirectoryTree : mockGitTree)
       setSelectedFile(null)
       setComparedPaths(null)
+      setComparedGit(null)
       setIpcDetail(null)
       setIsComparing(false)
     }, MOCK_COMPARE_DURATION)
@@ -354,27 +507,55 @@ export default function App() {
   const stats = useMemo(() => countStats(filteredTree), [filteredTree])
 
   // IPC 比較結果のファイル選択時：実内容を遅延取得して diff / メタデータを組み立てる
-  // （テキスト：read_file_content ×2 → compute_diff / バイナリ：read_binary_meta）
+  // （フォルダ比較テキスト：read_file_content ×2 → compute_diff / バイナリ：read_binary_meta。
+  //  git比較テキスト：read_file_at_ref ×2 → compute_diff / バイナリ：FileNode の
+  //  blob ハッシュ等、取得できる範囲のメタデータで表示する）
   useEffect(() => {
-    if (!comparedPaths || !selectedFile || selectedFile.type !== 'file') {
+    if ((!comparedPaths && !comparedGit) || !selectedFile || selectedFile.type !== 'file') {
       setIpcDetail(null)
       return
     }
     const file = selectedFile
-    const leftAbs = `${comparedPaths.left}/${file.path}`
-    const rightAbs = `${comparedPaths.right}/${file.path}`
+    const leftAbs = `${comparedPaths?.left}/${file.path}`
+    const rightAbs = `${comparedPaths?.right}/${file.path}`
     let cancelled = false
 
     const load = async () => {
       setError(null)
       try {
         if (file.isText) {
-          const [leftText, rightText] = await Promise.all([
-            file.status === 'added' ? Promise.resolve('') : readFileContent(leftAbs),
-            file.status === 'deleted' ? Promise.resolve('') : readFileContent(rightAbs),
-          ])
+          const [leftText, rightText] = await Promise.all(
+            comparedGit
+              ? [
+                  file.status === 'added'
+                    ? Promise.resolve('')
+                    : readFileAtRef(comparedGit.repo, comparedGit.oldRef, file.path),
+                  file.status === 'deleted'
+                    ? Promise.resolve('')
+                    : readFileAtRef(comparedGit.repo, comparedGit.newRef, file.path),
+                ]
+              : [
+                  file.status === 'added' ? Promise.resolve('') : readFileContent(leftAbs),
+                  file.status === 'deleted' ? Promise.resolve('') : readFileContent(rightAbs),
+                ],
+          )
           const diffLines = await computeDiff(leftText, rightText)
           if (!cancelled) setIpcDetail({ path: file.path, diffLines })
+        } else if (comparedGit) {
+          // git比較のバイナリ：ツリー取得時の blob ハッシュを取得できる範囲で表示する
+          // （サイズ・更新日時は読み取り専用 git コマンドの範囲では取得しない）
+          const info: BinaryFileInfo = {
+            size: file.size ?? 0,
+            hash: file.hash ?? '',
+            modifiedDate: file.modifiedDate ?? '',
+          }
+          const binary =
+            file.status === 'added'
+              ? { right: info }
+              : file.status === 'deleted'
+                ? { left: info }
+                : { left: info, right: info }
+          if (!cancelled) setIpcDetail({ path: file.path, binary })
         } else {
           const meta = await readBinaryMeta(
             file.status === 'added' ? undefined : leftAbs,
@@ -394,7 +575,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [comparedPaths, selectedFile])
+  }, [comparedPaths, comparedGit, selectedFile])
 
   // 選択ファイルの詳細（テキスト：DiffLine[] / バイナリ：左右メタデータ）。
   // IPC 比較結果は遅延取得した ipcDetail を使い、モック結果は従来のビルダーを使う
@@ -402,7 +583,7 @@ export default function App() {
     if (!selectedFile || selectedFile.type !== 'file') {
       return { diffLines: undefined, binary: undefined }
     }
-    if (comparedPaths) {
+    if (comparedPaths || comparedGit) {
       if (ipcDetail && ipcDetail.path === selectedFile.path) {
         return { diffLines: ipcDetail.diffLines, binary: ipcDetail.binary }
       }
@@ -416,7 +597,7 @@ export default function App() {
       return { diffLines: buildMockDiffLines(selectedFile), binary: undefined }
     }
     return { diffLines: undefined, binary: buildMockBinaryInfo(selectedFile) }
-  }, [selectedFile, comparedPaths, ipcDetail])
+  }, [selectedFile, comparedPaths, comparedGit, ipcDetail])
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -429,8 +610,8 @@ export default function App() {
         onRightPathChange={setRightPath}
         repoPath={repoPath}
         onRepoPathChange={setRepoPath}
-        branches={mockBranches}
-        commits={mockCommits}
+        branches={isTauri() ? branches : mockBranches}
+        commits={isTauri() ? commits : mockCommits}
         refA={refA}
         refB={refB}
         onRefAChange={setRefA}
