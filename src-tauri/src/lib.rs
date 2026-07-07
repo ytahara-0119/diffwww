@@ -1,5 +1,6 @@
 mod compare;
 mod diff;
+mod git;
 
 use std::path::{Path, PathBuf};
 
@@ -56,6 +57,63 @@ async fn read_binary_meta(
     .map_err(|e| format!("メタデータ取得の実行に失敗しました: {e}"))
 }
 
+// ---------------------------------------------------------------------------
+// git 比較コマンド（SPEC.md §6.2 git比較、§6.3 git連携方式）
+// 読み取り専用 git コマンドのみを実行する（git.rs 参照）。
+// ---------------------------------------------------------------------------
+
+/// 指定パスが git リポジトリか判定する
+#[tauri::command]
+async fn is_git_repository(path: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || git::is_git_repository_impl(&path))
+        .await
+        .map_err(|e| format!("git 判定の実行に失敗しました: {e}"))
+}
+
+/// ブランチ一覧を GitBranch 列で返す
+#[tauri::command]
+async fn list_branches(repo: String) -> Result<Vec<git::GitBranch>, String> {
+    tauri::async_runtime::spawn_blocking(move || git::list_branches_impl(&repo))
+        .await
+        .map_err(|e| format!("ブランチ一覧の取得に失敗しました: {e}"))?
+}
+
+/// 指定ブランチの最新コミット一覧（最大50件）を GitCommit 列で返す
+#[tauri::command]
+async fn list_commits(repo: String, branch: String) -> Result<Vec<git::GitCommit>, String> {
+    tauri::async_runtime::spawn_blocking(move || git::list_commits_impl(&repo, &branch))
+        .await
+        .map_err(|e| format!("コミット一覧の取得に失敗しました: {e}"))?
+}
+
+/// 2つの ref（ref_a = old / ref_b = new）を比較し変更ファイルの FileNode ツリーを返す
+#[tauri::command]
+async fn compare_git_refs(
+    repo: String,
+    ref_a: String,
+    ref_b: String,
+) -> Result<Vec<compare::FileNode>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        git::compare_git_refs_impl(&repo, &ref_a, &ref_b)
+    })
+    .await
+    .map_err(|e| format!("git 比較の実行に失敗しました: {e}"))?
+}
+
+/// `git show REF:PATH` で指定 ref のファイル内容を読み込む（1MB 上限）
+#[tauri::command]
+async fn read_file_at_ref(
+    repo: String,
+    git_ref: String,
+    path: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        git::read_file_at_ref_impl(&repo, &git_ref, &path)
+    })
+    .await
+    .map_err(|e| format!("ファイル読み込みの実行に失敗しました: {e}"))?
+}
+
 /// OS ネイティブのフォルダ選択ダイアログを開く
 #[tauri::command]
 async fn open_folder_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
@@ -89,6 +147,11 @@ pub fn run() {
             compute_diff,
             read_binary_meta,
             open_folder_dialog,
+            is_git_repository,
+            list_branches,
+            list_commits,
+            compare_git_refs,
+            read_file_at_ref,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
