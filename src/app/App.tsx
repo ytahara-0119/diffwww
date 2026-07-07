@@ -19,18 +19,30 @@ import EmptyState from './components/EmptyState'
 import DirectoryTree from './components/DirectoryTree'
 import FileDetailView from './components/FileDetailView'
 import type { BinaryFileInfo } from './components/BinaryFileView'
+import { getCurrentWebview } from '@tauri-apps/api/webview'
+import {
+  compareDirectories,
+  computeDiff,
+  isTauri,
+  openFolderDialog,
+  readBinaryMeta,
+  readFileContent,
+  toErrorMessage,
+} from './lib/ipc'
 
 // ---------------------------------------------------------------------------
 // App（SPEC.md §4.1〜4.3, §4.7〜4.10, §5.1）
-// モード state・比較実行（擬似ローディング）・検索/フィルタ・統計集計・
+// モード state・比較実行・検索/フィルタ・統計集計・
 // DirectoryTree + FileDetailView 連携をまとめる統合コンポーネント。
-// 比較結果は現状モックデータ。issue06/07 で Tauri IPC に差し替える。
+// フォルダ比較は Tauri IPC 経由の実データ（issue06）。git比較はモックのまま
+// （issue07 で差し替え）。Tauri 外（pnpm dev のブラウザ）では従来どおり
+// 全モードがモック動作する。
 // ---------------------------------------------------------------------------
 
-/** 擬似ローディング時間（ms）。issue06/07 で実比較に差し替える */
+/** 擬似ローディング時間（ms）。git比較（issue07 まで）とブラウザ動作時に使用 */
 const MOCK_COMPARE_DURATION = 900
 
-/** フォルダ選択ダイアログのモック値（issue06 で open_folder_dialog に差し替え） */
+/** フォルダ選択ダイアログのモック値（Tauri 外のブラウザ動作時のフォールバック） */
 const MOCK_PICKED_PATHS = {
   left: '/Users/dev/projects/renderer-v1',
   right: '/Users/dev/projects/renderer-v2',
@@ -155,6 +167,20 @@ export default function App() {
   const [selectedFile, setSelectedFile] = useState<FileNode | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // IPC でフォルダ比較を実行したときの左右ルートパス（モック結果のときは null）。
+  // 選択ファイルの実内容読み込み（read_file_content / read_binary_meta）に使う
+  const [comparedPaths, setComparedPaths] = useState<{
+    left: string
+    right: string
+  } | null>(null)
+
+  // IPC で遅延取得した選択ファイルの詳細（テキスト diff / バイナリメタデータ）
+  const [ipcDetail, setIpcDetail] = useState<{
+    path: string
+    diffLines?: DiffLine[]
+    binary?: { left?: BinaryFileInfo; right?: BinaryFileInfo }
+  } | null>(null)
+
   // 検索・フィルタ
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -187,24 +213,118 @@ export default function App() {
     setError(null)
     setSearchQuery('')
     setStatusFilter('all')
+    setComparedPaths(null)
+    setIpcDetail(null)
   }
 
-  /** フォルダ選択（モック）。issue06 で Tauri の open_folder_dialog に差し替える */
-  const handlePickFolder = (target: 'left' | 'right' | 'repo') => {
-    const picked = MOCK_PICKED_PATHS[target]
+  /** 入力欄にパスを反映する（ダイアログ・D&D 共通） */
+  const applyPickedPath = (target: 'left' | 'right' | 'repo', picked: string) => {
     if (target === 'left') setLeftPath(picked)
     else if (target === 'right') setRightPath(picked)
     else setRepoPath(picked)
   }
+
+  /** フォルダ選択。Tauri 内では open_folder_dialog、ブラウザ動作時はモック値 */
+  const handlePickFolder = async (target: 'left' | 'right' | 'repo') => {
+    if (!isTauri()) {
+      applyPickedPath(target, MOCK_PICKED_PATHS[target])
+      return
+    }
+    try {
+      const picked = await openFolderDialog()
+      if (picked) applyPickedPath(target, picked)
+    } catch (err) {
+      setError(toErrorMessage(err))
+    }
+  }
+
+  /**
+   * Finder D&D（SPEC.md §4.2, §6.4）：OS レベルのドラッグは HTML の drag イベントが
+   * 発火しないため Tauri の onDragDropEvent を使う。position は論理ピクセルで
+   * window.innerWidth と同じ座標系（docs/workflow.md「プラットフォーム固有 API の取り扱い」）。
+   * ドロップ位置の左右で振り分け、git比較モードでは位置によらずリポジトリパスにする。
+   */
+  const modeRef = useRef(mode)
+  modeRef.current = mode
+  useEffect(() => {
+    if (!isTauri()) return
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    void getCurrentWebview()
+      .onDragDropEvent((event) => {
+        // macOS では leave が drop より先に発火することがあるため drop のみ扱う
+        if (event.payload.type !== 'drop') return
+        const { paths, position } = event.payload
+        const first = paths[0]
+        if (!first) return
+        if (modeRef.current === 'git') {
+          setRepoPath(first)
+          return
+        }
+        if (paths.length >= 2) {
+          // 2つ同時ドロップは左右にまとめて割り当てる
+          setLeftPath(first)
+          setRightPath(paths[1])
+          return
+        }
+        applyPickedPath(position.x < window.innerWidth / 2 ? 'left' : 'right', first)
+      })
+      .then((fn) => {
+        if (disposed) fn()
+        else unlisten = fn
+      })
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [])
 
   const canCompare =
     mode === 'directory'
       ? leftPath.trim() !== '' && rightPath.trim() !== ''
       : repoPath.trim() !== '' && refA.branch !== '' && refB.branch !== ''
 
-  /** 比較実行：擬似ローディング（プログレスバー）→ モック結果表示（SPEC.md §4.9） */
+  /** フォルダ比較の実行（Tauri IPC、SPEC.md §4.9・§6.1） */
+  const runDirectoryCompare = async () => {
+    const left = leftPath.trim()
+    const right = rightPath.trim()
+    clearTimers()
+    setIsComparing(true)
+    setProgress(0)
+    setError(null)
+
+    // バックエンドは進捗イベントを持たないため、完了まで 90% を上限に進める
+    const intervalId = window.setInterval(() => {
+      setProgress((prev) => Math.min(prev + 6, 90))
+    }, 120)
+    timersRef.current.push(intervalId)
+
+    try {
+      const result = await compareDirectories(left, right)
+      setTree(result)
+      setSelectedFile(null)
+      setComparedPaths({ left, right })
+      setIpcDetail(null)
+      setProgress(100)
+    } catch (err) {
+      setError(toErrorMessage(err))
+    } finally {
+      clearTimers()
+      setIsComparing(false)
+    }
+  }
+
+  /**
+   * 比較実行（SPEC.md §4.9）。
+   * フォルダ比較（Tauri 内）は IPC で実データを取得する。
+   * git比較（issue07 まで）とブラウザ動作時は擬似ローディング → モック結果。
+   */
   const handleCompare = () => {
     if (!canCompare || isComparing) return
+    if (mode === 'directory' && isTauri()) {
+      void runDirectoryCompare()
+      return
+    }
     const compareMode = mode
     clearTimers()
     setIsComparing(true)
@@ -219,6 +339,8 @@ export default function App() {
       setProgress(100)
       setTree(compareMode === 'directory' ? mockDirectoryTree : mockGitTree)
       setSelectedFile(null)
+      setComparedPaths(null)
+      setIpcDetail(null)
       setIsComparing(false)
     }, MOCK_COMPARE_DURATION)
     timersRef.current.push(intervalId, timeoutId)
@@ -231,16 +353,70 @@ export default function App() {
   )
   const stats = useMemo(() => countStats(filteredTree), [filteredTree])
 
-  // 選択ファイルの詳細（テキスト：DiffLine[] / バイナリ：左右メタデータ）
+  // IPC 比較結果のファイル選択時：実内容を遅延取得して diff / メタデータを組み立てる
+  // （テキスト：read_file_content ×2 → compute_diff / バイナリ：read_binary_meta）
+  useEffect(() => {
+    if (!comparedPaths || !selectedFile || selectedFile.type !== 'file') {
+      setIpcDetail(null)
+      return
+    }
+    const file = selectedFile
+    const leftAbs = `${comparedPaths.left}/${file.path}`
+    const rightAbs = `${comparedPaths.right}/${file.path}`
+    let cancelled = false
+
+    const load = async () => {
+      setError(null)
+      try {
+        if (file.isText) {
+          const [leftText, rightText] = await Promise.all([
+            file.status === 'added' ? Promise.resolve('') : readFileContent(leftAbs),
+            file.status === 'deleted' ? Promise.resolve('') : readFileContent(rightAbs),
+          ])
+          const diffLines = await computeDiff(leftText, rightText)
+          if (!cancelled) setIpcDetail({ path: file.path, diffLines })
+        } else {
+          const meta = await readBinaryMeta(
+            file.status === 'added' ? undefined : leftAbs,
+            file.status === 'deleted' ? undefined : rightAbs,
+          )
+          if (!cancelled) setIpcDetail({ path: file.path, binary: meta })
+        }
+      } catch (err) {
+        // 1MB 超・読み込み失敗などはエラーバナーに表示し、詳細ペインは空にする
+        if (!cancelled) {
+          setIpcDetail({ path: file.path, diffLines: file.isText ? [] : undefined })
+          setError(toErrorMessage(err))
+        }
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [comparedPaths, selectedFile])
+
+  // 選択ファイルの詳細（テキスト：DiffLine[] / バイナリ：左右メタデータ）。
+  // IPC 比較結果は遅延取得した ipcDetail を使い、モック結果は従来のビルダーを使う
   const detail = useMemo(() => {
     if (!selectedFile || selectedFile.type !== 'file') {
       return { diffLines: undefined, binary: undefined }
+    }
+    if (comparedPaths) {
+      if (ipcDetail && ipcDetail.path === selectedFile.path) {
+        return { diffLines: ipcDetail.diffLines, binary: ipcDetail.binary }
+      }
+      // 読み込み中（またはエラー直後）は空表示
+      return {
+        diffLines: selectedFile.isText ? [] : undefined,
+        binary: selectedFile.isText ? undefined : {},
+      }
     }
     if (selectedFile.isText) {
       return { diffLines: buildMockDiffLines(selectedFile), binary: undefined }
     }
     return { diffLines: undefined, binary: buildMockBinaryInfo(selectedFile) }
-  }, [selectedFile])
+  }, [selectedFile, comparedPaths, ipcDetail])
 
   return (
     <div className="flex h-full flex-col bg-background">
