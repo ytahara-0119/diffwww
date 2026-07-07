@@ -355,6 +355,7 @@ App
 |---------|------|
 | `compare_directories` | 左右ディレクトリを再帰比較し `FileNode[]` を返す |
 | `read_file_content` | 指定パスのテキストファイルを読み込む |
+| `read_binary_meta` | 指定パスのバイナリメタデータ（サイズ / SHA-256 / 更新日時）を返す。BinaryFileView の左右カード表示用（FileNode はハッシュを片側分しか保持しないため） |
 
 ### git比較
 
