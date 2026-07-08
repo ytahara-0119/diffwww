@@ -4,14 +4,17 @@
 
 | Issue | タイトル | 依存 | 並列グループ | 状態 |
 |-------|---------|------|------------|------|
-| issue01 | 環境構築（Vite + React + TS + Tailwind + shadcn/ui + Tauri） | なし | Group 1 | 未着手 |
-| issue02 | 型定義・モックデータ（types.ts / mockData.ts） | issue01 | Group 2 | 未着手 |
-| issue03 | DirectoryTree コンポーネント | issue02 | Group 3 | 未着手 |
-| issue04 | FileDetailView コンポーネント（TextDiffView + BinaryFileView） | issue02 | Group 3 | 未着手 |
-| issue05 | App 統合（ヘッダー・モードタブ・GitRefSelector・検索・フィルタ） | issue03, issue04 | Group 4 | 未着手 |
-| issue06 | Tauri IPC 連携：フォルダ比較 | issue05 | Group 5 | 未着手 |
-| issue07 | Tauri IPC 連携：git比較 | issue06 | Group 6 | 未着手 |
-| issue08 | アイコン適用・.app パッケージ化・動作確認 | issue07 | Group 7 | 未着手 |
+| issue01 | 環境構築（Vite + React + TS + Tailwind + shadcn/ui + Tauri） | なし | Group 1 | 完了 |
+| issue02 | 型定義・モックデータ（types.ts / mockData.ts） | issue01 | Group 2 | 完了 |
+| issue03 | DirectoryTree コンポーネント | issue02 | Group 3 | 完了 |
+| issue04 | FileDetailView コンポーネント（TextDiffView + BinaryFileView） | issue02 | Group 3 | 完了 |
+| issue05 | App 統合（ヘッダー・モードタブ・GitRefSelector・検索・フィルタ） | issue03, issue04 | Group 4 | 完了 |
+| issue06 | Tauri IPC 連携：フォルダ比較 | issue05 | Group 5 | 完了 |
+| issue07 | Tauri IPC 連携：git比較 | issue06 | Group 6 | 完了 |
+| issue08 | アイコン適用・.app パッケージ化・動作確認 | issue07 | Group 7 | 完了 |
+| issue09 | 変更マーカーバー（ChangeMinimap） | issue04, issue08 | Group 8 | 未着手 |
+
+※ issue01〜08 は完了（MVP達成、PR #1〜#8 マージ済み）。issue09 以降は MVP 後の改善フェーズ。
 
 ---
 
@@ -32,6 +35,8 @@ Group 5: issue06  （IPC：フォルダ比較）
 Group 6: issue07  （IPC：git比較）
     ↓
 Group 7: issue08  （アイコン・パッケージ化）
+    ↓
+Group 8: issue09  （変更マーカーバー）
 ```
 
 ※ issue06 と issue07 は両方 `App.tsx` と `src-tauri/src/` を編集するため並列化しない（競合回避ルール）。
@@ -49,6 +54,7 @@ issue01
                             └── issue06
                                   └── issue07
                                         └── issue08
+                                              └── issue09
 ```
 
 ---
@@ -80,6 +86,7 @@ issue01
 | issue06 | feature/issue06-ipc-directory |
 | issue07 | feature/issue07-ipc-git |
 | issue08 | feature/issue08-packaging |
+| issue09 | feature/issue09-change-minimap |
 
 ---
 
