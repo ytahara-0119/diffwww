@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react'
 import type { DiffLine } from '../types'
+import ChangeMinimap from './ChangeMinimap'
 
 /**
  * TextDiffView：左右2カラムの Split Diff（SPEC.md §4.6）
@@ -177,6 +178,10 @@ export default function TextDiffView({ lines }: TextDiffViewProps) {
       {renderPane('left', leftPaneRef, leftContentRef)}
       <div className="w-px shrink-0 bg-border" />
       {renderPane('right', rightPaneRef, rightContentRef)}
+      {/* 変更マーカーバー：右端に常時表示（SPEC.md §4.6）。
+          ジャンプは rightPane の scrollTop 設定で行い、既存の同期機構に乗せる */}
+      <div className="w-px shrink-0 bg-border" />
+      <ChangeMinimap lines={lines} scrollRef={rightPaneRef} />
     </div>
   )
 }
