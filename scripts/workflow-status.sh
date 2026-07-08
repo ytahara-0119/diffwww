@@ -26,7 +26,7 @@ for issue_file in "$ISSUES_DIR"/issue[0-9]*.md; do
   TOTAL=$((TOTAL + 1))
 
   # main にマージ済みかチェック
-  if git log main --oneline 2>/dev/null | grep -q "$ISSUE_ID\|$(echo "$BRANCH" | sed 's|feature/||')"; then
+  if git log main --oneline 2>/dev/null | grep -q "feat($ISSUE_ID)\|$(echo "$BRANCH" | sed 's|feature/||')"; then
     ICON="✓"
     STATUS="done"
     DONE=$((DONE + 1))

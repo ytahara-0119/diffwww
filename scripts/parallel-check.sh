@@ -38,7 +38,7 @@ get_branch() {
 is_merged() {
   local issue_id="$1"
   local branch="$2"
-  git log main --oneline 2>/dev/null | grep -qE "$issue_id|$(echo "$branch" | sed 's|feature/||')"
+  git log main --oneline 2>/dev/null | grep -qE "feat\\($issue_id\\)|$(echo "$branch" | sed 's|feature/||')"
 }
 
 # ローカルまたはリモートにブランチが存在するか判定
