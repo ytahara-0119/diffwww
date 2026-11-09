@@ -26,7 +26,9 @@ import {
   compareDirectories,
   computeDiff,
   isTauri,
+  openFileDialog,
   openFolderDialog,
+  probeIsText,
   readBinaryMeta,
   readFileContent,
   toErrorMessage,
@@ -58,6 +60,12 @@ const MOCK_PICKED_PATHS = {
   left: '/Users/dev/projects/renderer-v1',
   right: '/Users/dev/projects/renderer-v2',
   repo: '/Users/dev/projects/renderer',
+} as const
+
+/** ファイル選択ダイアログのモック値（Tauri 外のブラウザ動作時のフォールバック） */
+const MOCK_PICKED_FILE_PATHS = {
+  left: '/Users/dev/projects/renderer-v1/src/index.ts',
+  right: '/Users/dev/projects/renderer-v2/src/index.ts',
 } as const
 
 const EMPTY_REF: GitRefSelection = { branch: '' }
@@ -171,6 +179,18 @@ export default function App() {
   const [refA, setRefA] = useState<GitRefSelection>(EMPTY_REF)
   const [refB, setRefB] = useState<GitRefSelection>(EMPTY_REF)
 
+  // ファイル比較モードの入力（SPEC.md §4.11）
+  const [leftFilePath, setLeftFilePath] = useState('')
+  const [rightFilePath, setRightFilePath] = useState('')
+
+  // ファイル比較モードの結果（null = 未比較）
+  const [fileCompareResult, setFileCompareResult] = useState<{
+    isText: boolean
+    diffLines?: DiffLine[]
+    binary?: { left?: BinaryFileInfo; right?: BinaryFileInfo }
+    syntheticFile: FileNode
+  } | null>(null)
+
   // git比較モードのブランチ・コミット一覧（Tauri 内では IPC で取得。
   // ブラウザ動作時は Header へ渡す際にモックへフォールバックする）
   const [branches, setBranches] = useState<GitBranch[]>([])
@@ -231,6 +251,9 @@ export default function App() {
     setRepoPath('')
     setRefA(EMPTY_REF)
     setRefB(EMPTY_REF)
+    setLeftFilePath('')
+    setRightFilePath('')
+    setFileCompareResult(null)
     setIsComparing(false)
     setProgress(0)
     setTree(null)
@@ -250,6 +273,24 @@ export default function App() {
     if (target === 'left') setLeftPath(picked)
     else if (target === 'right') setRightPath(picked)
     else setRepoPath(picked)
+  }
+
+  /** ファイル選択。Tauri 内では open_file_dialog、ブラウザ動作時はモック値（SPEC.md §4.11） */
+  const handlePickFile = async (target: 'left' | 'right') => {
+    if (!isTauri()) {
+      if (target === 'left') setLeftFilePath(MOCK_PICKED_FILE_PATHS.left)
+      else setRightFilePath(MOCK_PICKED_FILE_PATHS.right)
+      return
+    }
+    try {
+      const picked = await openFileDialog()
+      if (picked) {
+        if (target === 'left') setLeftFilePath(picked)
+        else setRightFilePath(picked)
+      }
+    } catch (err) {
+      setError(toErrorMessage(err))
+    }
   }
 
   /** フォルダ選択。Tauri 内では open_folder_dialog、ブラウザ動作時はモック値 */
@@ -287,6 +328,17 @@ export default function App() {
         if (!first) return
         if (modeRef.current === 'git') {
           setRepoPath(first)
+          return
+        }
+        if (modeRef.current === 'file') {
+          if (paths.length >= 2) {
+            setLeftFilePath(first)
+            setRightFilePath(paths[1])
+          } else {
+            const target = position.x < window.innerWidth / 2 ? 'left' : 'right'
+            if (target === 'left') setLeftFilePath(first)
+            else setRightFilePath(first)
+          }
           return
         }
         if (paths.length >= 2) {
@@ -398,7 +450,9 @@ export default function App() {
   const canCompare =
     mode === 'directory'
       ? leftPath.trim() !== '' && rightPath.trim() !== ''
-      : repoPath.trim() !== '' && refA.branch !== '' && refB.branch !== ''
+      : mode === 'file'
+        ? leftFilePath.trim() !== '' && rightFilePath.trim() !== ''
+        : repoPath.trim() !== '' && refA.branch !== '' && refB.branch !== ''
 
   /** フォルダ比較の実行（Tauri IPC、SPEC.md §4.9・§6.1） */
   const runDirectoryCompare = async () => {
@@ -467,6 +521,74 @@ export default function App() {
   }
 
   /**
+   * ファイル比較の実行（SPEC.md §4.11）。
+   * probe_is_text でテキスト判定 → テキストなら readFileContent×2 + computeDiff、
+   * バイナリなら readBinaryMeta を呼び出す。
+   */
+  const runFileCompare = async () => {
+    const left = leftFilePath.trim()
+    const right = rightFilePath.trim()
+    clearTimers()
+    setIsComparing(true)
+    setProgress(0)
+    setError(null)
+
+    const intervalId = window.setInterval(() => {
+      setProgress((prev) => Math.min(prev + 10, 90))
+    }, 100)
+    timersRef.current.push(intervalId)
+
+    try {
+      const isText = await probeIsText(left, right)
+      const leftName = left.split('/').pop() ?? left
+      const rightName = right.split('/').pop() ?? right
+      const displayName = leftName === rightName ? leftName : `${leftName} ↔ ${rightName}`
+
+      if (isText) {
+        const [leftText, rightText] = await Promise.all([
+          readFileContent(left),
+          readFileContent(right),
+        ])
+        const diffLines = await computeDiff(leftText, rightText)
+        const hasChanges = diffLines.some((l) => l.type !== 'unchanged')
+        setFileCompareResult({
+          isText: true,
+          diffLines,
+          syntheticFile: {
+            name: displayName,
+            path: displayName,
+            type: 'file',
+            status: hasChanges ? 'modified' : 'identical',
+            isText: true,
+          },
+        })
+      } else {
+        const meta = await readBinaryMeta(left, right)
+        const leftHash = meta.left?.hash
+        const rightHash = meta.right?.hash
+        const isIdentical = Boolean(leftHash && rightHash && leftHash === rightHash)
+        setFileCompareResult({
+          isText: false,
+          binary: { left: meta.left, right: meta.right },
+          syntheticFile: {
+            name: displayName,
+            path: displayName,
+            type: 'file',
+            status: isIdentical ? 'identical' : 'modified',
+            isText: false,
+          },
+        })
+      }
+      setProgress(100)
+    } catch (err) {
+      setError(toErrorMessage(err))
+    } finally {
+      clearTimers()
+      setIsComparing(false)
+    }
+  }
+
+  /**
    * 比較実行（SPEC.md §4.9）。
    * Tauri 内ではフォルダ比較・git比較とも IPC で実データを取得する。
    * ブラウザ動作時は擬似ローディング → モック結果。
@@ -474,7 +596,11 @@ export default function App() {
   const handleCompare = () => {
     if (!canCompare || isComparing) return
     if (isTauri()) {
-      void (mode === 'directory' ? runDirectoryCompare() : runGitCompare())
+      void (mode === 'directory'
+        ? runDirectoryCompare()
+        : mode === 'file'
+          ? runFileCompare()
+          : runGitCompare())
       return
     }
     const compareMode = mode
@@ -489,11 +615,28 @@ export default function App() {
     const timeoutId = window.setTimeout(() => {
       clearTimers()
       setProgress(100)
-      setTree(compareMode === 'directory' ? mockDirectoryTree : mockGitTree)
-      setSelectedFile(null)
-      setComparedPaths(null)
-      setComparedGit(null)
-      setIpcDetail(null)
+      if (compareMode === 'file') {
+        const leftName = leftFilePath.split('/').pop() ?? 'left'
+        const rightName = rightFilePath.split('/').pop() ?? 'right'
+        const displayName = leftName === rightName ? leftName : `${leftName} ↔ ${rightName}`
+        setFileCompareResult({
+          isText: true,
+          diffLines: mockDiffLines,
+          syntheticFile: {
+            name: displayName || 'index.ts ↔ index-new.ts',
+            path: displayName || 'index.ts ↔ index-new.ts',
+            type: 'file',
+            status: 'modified',
+            isText: true,
+          },
+        })
+      } else {
+        setTree(compareMode === 'directory' ? mockDirectoryTree : mockGitTree)
+        setSelectedFile(null)
+        setComparedPaths(null)
+        setComparedGit(null)
+        setIpcDetail(null)
+      }
       setIsComparing(false)
     }, MOCK_COMPARE_DURATION)
     timersRef.current.push(intervalId, timeoutId)
@@ -616,6 +759,11 @@ export default function App() {
         refB={refB}
         onRefAChange={setRefA}
         onRefBChange={setRefB}
+        leftFilePath={leftFilePath}
+        rightFilePath={rightFilePath}
+        onLeftFilePathChange={setLeftFilePath}
+        onRightFilePathChange={setRightFilePath}
+        onPickFile={handlePickFile}
         onPickFolder={handlePickFolder}
         canCompare={canCompare}
         isComparing={isComparing}
@@ -635,7 +783,25 @@ export default function App() {
       )}
 
       <main className="flex min-h-0 flex-1">
-        {tree === null ? (
+        {/* ファイル比較モード：DirectoryTree なし、FileDetailView を全幅表示（SPEC.md §4.11） */}
+        {mode === 'file' ? (
+          fileCompareResult === null ? (
+            <EmptyState mode={mode} />
+          ) : (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3 }}
+              className="flex min-h-0 min-w-0 flex-1"
+            >
+              <FileDetailView
+                file={fileCompareResult.syntheticFile}
+                diffLines={fileCompareResult.diffLines}
+                binary={fileCompareResult.binary}
+              />
+            </motion.div>
+          )
+        ) : tree === null ? (
           <EmptyState mode={mode} />
         ) : (
           <motion.div

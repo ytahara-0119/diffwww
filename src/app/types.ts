@@ -1,6 +1,6 @@
 export type CompareStatus = 'added' | 'deleted' | 'modified' | 'identical';
 
-export type CompareMode = 'directory' | 'git';
+export type CompareMode = 'directory' | 'git' | 'file';
 
 export interface FileNode {
   name: string;

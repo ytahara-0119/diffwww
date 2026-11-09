@@ -1,4 +1,5 @@
 import {
+  FileText,
   Folder,
   FolderGit2,
   GitBranch as GitBranchIcon,
@@ -50,6 +51,13 @@ interface HeaderProps {
   onRefAChange: (value: GitRefSelection) => void
   onRefBChange: (value: GitRefSelection) => void
 
+  /* ファイル比較モード（SPEC.md §4.11） */
+  leftFilePath: string
+  rightFilePath: string
+  onLeftFilePathChange: (value: string) => void
+  onRightFilePathChange: (value: string) => void
+  onPickFile: (target: 'left' | 'right') => void
+
   /* フォルダ選択（issue06 で実ダイアログに差し替え。現状はモック動作） */
   onPickFolder: (target: 'left' | 'right' | 'repo') => void
 
@@ -91,6 +99,7 @@ function AppLogo({ size = 22 }: { size?: number }) {
 const MODE_TABS: { mode: CompareMode; label: string }[] = [
   { mode: 'directory', label: 'フォルダ比較' },
   { mode: 'git', label: 'git比較' },
+  { mode: 'file', label: 'ファイル比較' },
 ]
 
 function ModeTabs({
@@ -314,6 +323,11 @@ export default function Header({
   refB,
   onRefAChange,
   onRefBChange,
+  leftFilePath,
+  rightFilePath,
+  onLeftFilePathChange,
+  onRightFilePathChange,
+  onPickFile,
   onPickFolder,
   canCompare,
   isComparing,
@@ -356,6 +370,30 @@ export default function Header({
             value={rightPath}
             onChange={onRightPathChange}
             onPick={() => onPickFolder('right')}
+          />
+          <CompareButton
+            canCompare={canCompare}
+            isComparing={isComparing}
+            onCompare={onCompare}
+          />
+        </div>
+      ) : mode === 'file' ? (
+        <div className="flex items-center gap-2">
+          <PathInput
+            icon={<FileText className="h-3.5 w-3.5" />}
+            ariaLabel="左ファイルパス"
+            placeholder="左ファイルパス（A / 比較元）"
+            value={leftFilePath}
+            onChange={onLeftFilePathChange}
+            onPick={() => onPickFile('left')}
+          />
+          <PathInput
+            icon={<FileText className="h-3.5 w-3.5" />}
+            ariaLabel="右ファイルパス"
+            placeholder="右ファイルパス（B / 比較先）"
+            value={rightFilePath}
+            onChange={onRightFilePathChange}
+            onPick={() => onPickFile('right')}
           />
           <CompareButton
             canCompare={canCompare}
@@ -417,8 +455,8 @@ export default function Header({
         </div>
       )}
 
-      {/* 3段目：検索 + フィルタ + 統計バッジ */}
-      <div className="flex items-center gap-2">
+      {/* 3段目：検索 + フィルタ + 統計バッジ（ファイル比較では不要のため非表示） */}
+      {mode !== 'file' && <div className="flex items-center gap-2">
         <div className="flex w-64 items-center gap-1.5 rounded-md border border-border bg-input px-2 focus-within:ring-1 focus-within:ring-ring">
           <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
           <input
@@ -451,7 +489,7 @@ export default function Header({
         </div>
 
         <StatsBadges stats={stats} mode={mode} />
-      </div>
+      </div>}
     </header>
   )
 }

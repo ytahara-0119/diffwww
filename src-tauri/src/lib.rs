@@ -129,6 +129,33 @@ async fn open_folder_dialog(app: tauri::AppHandle) -> Result<Option<String>, Str
         .map(|path: PathBuf| path.to_string_lossy().into_owned()))
 }
 
+/// OS ネイティブのファイル選択ダイアログを開く（SPEC.md §4.11）
+#[tauri::command]
+async fn open_file_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        app.dialog().file().blocking_pick_file()
+    })
+    .await
+    .map_err(|e| format!("ファイル選択ダイアログの表示に失敗しました: {e}"))?;
+
+    Ok(picked
+        .and_then(|file_path| file_path.into_path().ok())
+        .map(|path: PathBuf| path.to_string_lossy().into_owned()))
+}
+
+/// 左右ファイルがともにテキストかを判定する（SPEC.md §4.11）
+#[tauri::command]
+async fn probe_is_text(left: String, right: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok::<bool, String>(
+            compare::is_text_file(Path::new(&left)) && compare::is_text_file(Path::new(&right)),
+        )
+    })
+    .await
+    .map_err(|e| format!("ファイル判定の実行に失敗しました: {e}"))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -147,6 +174,8 @@ pub fn run() {
             compute_diff,
             read_binary_meta,
             open_folder_dialog,
+            open_file_dialog,
+            probe_is_text,
             is_git_repository,
             list_branches,
             list_commits,

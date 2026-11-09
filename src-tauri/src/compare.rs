@@ -390,7 +390,7 @@ fn hash_file(path: &Path) -> Result<String, std::io::Error> {
 }
 
 /// テキスト判定：先頭バイトに NUL を含まなければテキスト（簡易判定）
-fn is_text_file(path: &Path) -> bool {
+pub fn is_text_file(path: &Path) -> bool {
     let Ok(mut file) = fs::File::open(path) else {
         return false;
     };

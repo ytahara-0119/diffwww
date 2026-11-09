@@ -57,3 +57,13 @@ export function readBinaryMeta(left?: string, right?: string): Promise<BinaryMet
 export function openFolderDialog(): Promise<string | null> {
   return invoke<string | null>('open_folder_dialog')
 }
+
+/** OS ネイティブのファイル選択ダイアログを開く（キャンセル時は null、SPEC.md §4.11） */
+export function openFileDialog(): Promise<string | null> {
+  return invoke<string | null>('open_file_dialog')
+}
+
+/** 左右ファイルが両方テキストかを判定する（SPEC.md §4.11） */
+export function probeIsText(left: string, right: string): Promise<boolean> {
+  return invoke<boolean>('probe_is_text', { left, right })
+}

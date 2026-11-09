@@ -24,12 +24,16 @@ export default function EmptyState({ mode }: { mode: CompareMode }) {
         />
         <div>
           <p className="text-sm text-foreground">
-            フォルダまたは git リポジトリをドラッグ＆ドロップ
+            {mode === 'file'
+              ? '比較するファイルをドラッグ＆ドロップ'
+              : 'フォルダまたは git リポジトリをドラッグ＆ドロップ'}
           </p>
           <p className="mt-2 text-xs leading-5 text-muted-foreground">
             {mode === 'directory'
               ? '左右のフォルダパスを入力して「比較」を押すこともできます'
-              : 'リポジトリパスを入力し、A/B のブランチ・コミットを選択して「比較」を押してください'}
+              : mode === 'git'
+                ? 'リポジトリパスを入力し、A/B のブランチ・コミットを選択して「比較」を押してください'
+                : '左右のファイルパスを入力して「比較」を押すこともできます'}
           </p>
         </div>
       </div>
